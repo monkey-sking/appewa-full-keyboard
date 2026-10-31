@@ -6,8 +6,8 @@
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
 // @supportURL   https://github.com/monkey-sking/appewa-full-keyboard/issues
-// @downloadURL  https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-full-keyboard.user.js
-// @updateURL    https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-full-keyboard.user.js
+// @downloadURL  https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js
+// @updateURL    https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js
 // @match        https://app.appewa.com/*
 // @run-at       document-idle
 // @grant        none

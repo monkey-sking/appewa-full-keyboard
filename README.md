@@ -3,7 +3,7 @@
 这是一个用于 Appewa（`app.appewa.com`）课程页的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.6`。
 
 - [GitHub 仓库](https://github.com/monkey-sking/appewa-full-keyboard)
-- [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-full-keyboard.user.js)
+- [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js)
 
 ## 安装
 
@@ -15,7 +15,7 @@
 也可以通过 Tampermonkey 的“实用工具 → 从 URL 安装”使用：
 
 ```text
-https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-full-keyboard.user.js
+https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js
 ```
 
 ## 快捷键
