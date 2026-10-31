@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.7
+// @version      0.1.8
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.7";
+  const VERSION = "0.1.8";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -49,7 +49,6 @@
     '[role="tab"]',
     '[role="menuitem"]',
   ].join(",");
-  const NATIVE_ACTIVATION_SELECTOR = "button, a[href], summary";
   const PRIMARY_ACTION = '[data-testid="lesson.primary_action_button"]';
   const VALIDATION_ACTION = '[data-testid$=".validation.action_button"]';
   const ANSWERS_VIEWPORT = '[data-testid$=".answers_viewport"]';
@@ -346,10 +345,20 @@
   }
 
   function handleEnter(event) {
+    const action = findFocusAction();
     const candidates = getAnswerCandidates();
     const activeIndex = focusedCandidateIndex(candidates);
     const active = document.activeElement;
 
+    if (
+      active instanceof Element &&
+      action &&
+      (active === action || action.contains(active))
+    ) {
+      // Let the browser handle subsequent Enter presses natively. This is the
+      // fallback when Appewa ignores the synthetic click on the first press.
+      return false;
+    }
     if (activeIndex < 0 && isNativeEnterTarget(active)) {
       return false;
     }
@@ -357,19 +366,27 @@
       return false;
     }
 
-    const action = findFocusAction();
-    if (action?.matches(NATIVE_ACTIVATION_SELECTOR)) {
-      action.focus();
-      if (document.activeElement === action) {
-        const label = shortLabel(action);
-        announce(label ? `已触发：${label}` : "已触发主操作。");
-        // Keep the trusted Enter event so the browser activates the button
-        // natively instead of dispatching an untrusted synthetic click.
-        return true;
-      }
+    if (!action) {
+      announce("当前页面没有找到可用的检查或继续按钮。");
+      return false;
     }
 
-    return activateAction(event);
+    event.preventDefault();
+    if (event.repeat) {
+      return true;
+    }
+
+    const now = performance.now();
+    if (now - lastActionAt < ACTION_DEBOUNCE_MS) {
+      return true;
+    }
+
+    lastActionAt = now;
+    focusCandidate(action);
+    const label = shortLabel(action);
+    action.click();
+    announce(label ? `已触发：${label}` : "已触发主操作。");
+    return true;
   }
 
   function handleArrow(event) {
@@ -901,7 +918,7 @@
           <div class="panel-head">
             <div>
               <h2 class="title">Appewa 全键盘</h2>
-              <p class="subtitle">字母输入和网站原生操作保持不变</p>
+              <p class="subtitle">当前版本 ${VERSION} · 字母输入和网站原生操作保持不变</p>
             </div>
             <button class="close" type="button" aria-label="关闭快捷键帮助">×</button>
           </div>
