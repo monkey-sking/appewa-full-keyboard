@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.10
+// @version      0.1.11
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.10";
+  const VERSION = "0.1.11";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -64,6 +64,12 @@
   ].join(",");
   const COMPLETION_RATING_STAR =
     '[data-testid^="lesson.completion.feedback_star."]';
+  const ROADMAP_SCREEN = '[data-testid="screen.roadmap"]';
+  const ROADMAP_CONTINUE = '[data-testid="roadmap.continue_button"]';
+  const ROADMAP_ACTION_FALLBACKS = [
+    '[data-testid="roadmap.test_suggestion.primary_action"]',
+    '[data-testid="roadmap.section_change.action"]',
+  ];
   const ANSWERS_VIEWPORT = '[data-testid$=".answers_viewport"]';
   const ITEM_ID_PREFIXES = [".answer.", ".keyboard.", ".task."];
   const ACTION_DEBOUNCE_MS = 300;
@@ -125,6 +131,16 @@
     );
   }
 
+  function isInViewport(element) {
+    const rect = element.getBoundingClientRect();
+    return (
+      rect.bottom > 0 &&
+      rect.top < window.innerHeight &&
+      rect.right > 0 &&
+      rect.left < window.innerWidth
+    );
+  }
+
   function isEditableEvent(event) {
     return event
       .composedPath()
@@ -142,6 +158,7 @@
           '[data-testid="lesson.primary_action_button"]',
           COMPLETION_SCREEN,
           COMPLETION_ACTION,
+          ROADMAP_SCREEN,
         ].join(","),
       ).length > 0
     );
@@ -319,6 +336,22 @@
     );
     if (completionActions.length > 0) {
       return completionActions.at(-1);
+    }
+
+    const roadmapContinue = visibleElements(ROADMAP_CONTINUE).find(
+      (element) => !isDisabled(element),
+    );
+    if (roadmapContinue) {
+      return roadmapContinue;
+    }
+
+    for (const selector of ROADMAP_ACTION_FALLBACKS) {
+      const roadmapAction = visibleElements(selector).find(
+        (element) => !isDisabled(element) && isInViewport(element),
+      );
+      if (roadmapAction) {
+        return roadmapAction;
+      }
     }
 
     // Some completion variants render the continue button without a test ID.
@@ -985,7 +1018,7 @@
             <button class="close" type="button" aria-label="关闭快捷键帮助">×</button>
           </div>
           <dl class="rows">
-            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交 / 下一页</dd>
+            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交 / 下一页 / Roadmap 继续</dd>
             <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>聚焦上一个 / 下一个选项</dd>
             <dt><kbd>Space</kbd></dt><dd>选择当前聚焦的选项</dd>
             <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项；完成页按 1–5 评价星级</dd>
