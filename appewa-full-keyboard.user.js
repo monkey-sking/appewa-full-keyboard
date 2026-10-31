@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.5
+// @version      0.1.6
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.5";
+  const VERSION = "0.1.6";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -33,6 +33,21 @@
     '[role="tab"]',
     '[role="menuitem"]',
     '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+  const CONTROL_SELECTOR = [
+    "button",
+    "a[href]",
+    "summary",
+    "input",
+    "select",
+    "textarea",
+    '[role="button"]',
+    '[role="link"]',
+    '[role="radio"]',
+    '[role="checkbox"]',
+    '[role="option"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
   ].join(",");
   const PRIMARY_ACTION = '[data-testid="lesson.primary_action_button"]';
   const VALIDATION_ACTION = '[data-testid$=".validation.action_button"]';
@@ -128,6 +143,18 @@
   }
 
   function findActionableElement(sourceElement, scope) {
+    const controlDescendant = [
+      ...sourceElement.querySelectorAll(CONTROL_SELECTOR),
+    ].find(
+      (element) =>
+        scope.contains(element) &&
+        isVisible(element) &&
+        !isDisabled(element),
+    );
+    if (controlDescendant) {
+      return controlDescendant;
+    }
+
     if (sourceElement.matches(INTERACTIVE_SELECTOR)) {
       return sourceElement;
     }
