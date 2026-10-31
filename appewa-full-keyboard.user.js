@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.6
+// @version      0.1.7
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.6";
+  const VERSION = "0.1.7";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -49,6 +49,7 @@
     '[role="tab"]',
     '[role="menuitem"]',
   ].join(",");
+  const NATIVE_ACTIVATION_SELECTOR = "button, a[href], summary";
   const PRIMARY_ACTION = '[data-testid="lesson.primary_action_button"]';
   const VALIDATION_ACTION = '[data-testid$=".validation.action_button"]';
   const ANSWERS_VIEWPORT = '[data-testid$=".answers_viewport"]';
@@ -349,14 +350,23 @@
     const activeIndex = focusedCandidateIndex(candidates);
     const active = document.activeElement;
 
-    if (activeIndex >= 0) {
-      return activateAction(event);
-    }
-    if (isNativeEnterTarget(active)) {
+    if (activeIndex < 0 && isNativeEnterTarget(active)) {
       return false;
     }
     if (hasBlockingLessonDialog()) {
       return false;
+    }
+
+    const action = findFocusAction();
+    if (action?.matches(NATIVE_ACTIVATION_SELECTOR)) {
+      action.focus();
+      if (document.activeElement === action) {
+        const label = shortLabel(action);
+        announce(label ? `已触发：${label}` : "已触发主操作。");
+        // Keep the trusted Enter event so the browser activates the button
+        // natively instead of dispatching an untrusted synthetic click.
+        return true;
+      }
     }
 
     return activateAction(event);
