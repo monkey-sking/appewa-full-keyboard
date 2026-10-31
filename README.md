@@ -1,6 +1,6 @@
 # Appewa Full Keyboard
 
-这是一个用于 Appewa（`app.appewa.com`）课程页和 Roadmap 的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.11`。
+这是一个用于 Appewa（`app.appewa.com`）课程页和 Roadmap 的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.12`。
 
 - [GitHub 仓库](https://github.com/monkey-sking/appewa-full-keyboard)
 - [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js)
@@ -22,7 +22,7 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 
 | 按键 | 作用 |
 | --- | --- |
-| `Enter` | 检查、继续、提交当前练习，进入课程完成页的“下一页”，或在 Roadmap 继续当前课程 |
+| `Enter` | 检查、继续、提交当前练习，进入课程完成页的“下一页”，在 Roadmap 继续当前课程，或触发能力值弹层的“开始” |
 | `↑` / `↓` / `←` / `→` | 聚焦上一个或下一个选项、词语块 |
 | `Space` | 选择当前聚焦的选项（原生按钮和 `div[role]` 均可） |
 | `1`–`9` | 直接触发第 N 个可见选项或词语块；课程完成页用 `1`–`5` 评价星级 |
@@ -49,6 +49,7 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 - 讲解、反馈和验证弹层中的检查 / 继续按钮
 - 课程完成、短语回顾和词汇训练完成页中的继续按钮
 - Roadmap 页面的悬浮“继续”按钮、测试建议主操作和章节切换按钮
+- Roadmap 能力值弹层中的“开始”按钮
 
 语音练习仍可能需要系统麦克风授权；这类授权不应由用户脚本绕过。
 
@@ -89,7 +90,8 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 - `Alt+R`、`Alt+S`、`Alt+H` 分别触发播放、慢速和提示控件。
 - 课程完成页可识别 `lesson.completion_result.continue_button` 等继续按钮；按 `Enter` 进入“下一页”，按 `1`–`5` 选择课程评分。
 - Roadmap 页可识别 `roadmap.continue_button`；按 `Enter` 继续当前课程，聚焦其他原生按钮时仍由浏览器处理 Enter。
+- Roadmap 能力值弹层可识别 `energy.activity_popup.primary_button`；弹层打开后按 `Enter` 直接开始课程，不会被全屏遮罩按钮截获。
 
-也对当前线上课程页和 Roadmap DOM 做了只读匹配检查。`0.1.11` 的验证没有提交当前练习、没有改变课程进度，也没有提交课程评分。
+也对当前线上课程页和 Roadmap DOM 做了只读匹配检查。`0.1.12` 的验证没有提交当前练习、没有改变课程进度，也没有提交课程评分。
 
 尚未在当前浏览器中做完整的逐题人工验收；不同课程若新增了不带上述 `data-testid` 的控件，可能需要补充选择器。

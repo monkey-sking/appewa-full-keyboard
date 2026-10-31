@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.11
+// @version      0.1.12
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.11";
+  const VERSION = "0.1.12";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -66,6 +66,9 @@
     '[data-testid^="lesson.completion.feedback_star."]';
   const ROADMAP_SCREEN = '[data-testid="screen.roadmap"]';
   const ROADMAP_CONTINUE = '[data-testid="roadmap.continue_button"]';
+  const ENERGY_ACTIVITY_POPUP = '[data-testid="energy.activity_popup"]';
+  const ENERGY_ACTIVITY_PRIMARY =
+    '[data-testid="energy.activity_popup.primary_button"]';
   const ROADMAP_ACTION_FALLBACKS = [
     '[data-testid="roadmap.test_suggestion.primary_action"]',
     '[data-testid="roadmap.section_change.action"]',
@@ -331,6 +334,11 @@
       return primaryActions.at(-1);
     }
 
+    const energyAction = findEnergyActivityAction();
+    if (energyAction) {
+      return energyAction;
+    }
+
     const completionActions = visibleElements(COMPLETION_ACTION).filter(
       (element) => !isDisabled(element),
     );
@@ -367,6 +375,27 @@
     }
 
     return null;
+  }
+
+  function findEnergyActivityAction() {
+    const primary = visibleElements(ENERGY_ACTIVITY_PRIMARY).find(
+      (element) => !isDisabled(element),
+    );
+    if (primary) {
+      return primary;
+    }
+
+    const popup = visibleElements(ENERGY_ACTIVITY_POPUP).at(-1);
+    if (!popup) {
+      return null;
+    }
+
+    return (
+      [...popup.querySelectorAll("button, [role='button']")].find(
+        (element) =>
+          !isDisabled(element) && /^(开始|start)$/i.test(shortLabel(element)),
+      ) || null
+    );
   }
 
   function getCompletionRatingCandidates() {
@@ -422,6 +451,10 @@
       return true;
     }
 
+    if (findEnergyActivityAction()) {
+      return false;
+    }
+
     return visibleElements('[role="dialog"][aria-modal="true"]').some(
       (dialog) =>
         !dialog.querySelector(VALIDATION_ACTION) &&
@@ -431,9 +464,13 @@
 
   function handleEnter(event) {
     const action = findFocusAction();
+    const energyAction = findEnergyActivityAction();
     const candidates = getAnswerCandidates();
     const activeIndex = focusedCandidateIndex(candidates);
     const active = document.activeElement;
+    const activeInEnergyPopup =
+      active instanceof Element &&
+      Boolean(active.closest(ENERGY_ACTIVITY_POPUP));
 
     if (
       active instanceof Element &&
@@ -444,7 +481,11 @@
       // fallback when Appewa ignores the synthetic click on the first press.
       return false;
     }
-    if (activeIndex < 0 && isNativeEnterTarget(active)) {
+    if (
+      activeIndex < 0 &&
+      isNativeEnterTarget(active) &&
+      (!energyAction || activeInEnergyPopup)
+    ) {
       return false;
     }
     if (hasBlockingLessonDialog()) {
@@ -1018,7 +1059,7 @@
             <button class="close" type="button" aria-label="关闭快捷键帮助">×</button>
           </div>
           <dl class="rows">
-            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交 / 下一页 / Roadmap 继续</dd>
+            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交 / 下一页 / Roadmap 继续 / 弹层开始</dd>
             <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>聚焦上一个 / 下一个选项</dd>
             <dt><kbd>Space</kbd></dt><dd>选择当前聚焦的选项</dd>
             <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项；完成页按 1–5 评价星级</dd>
