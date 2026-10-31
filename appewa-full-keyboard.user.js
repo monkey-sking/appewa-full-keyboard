@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.9
+// @version      0.1.10
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.9";
+  const VERSION = "0.1.10";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -51,6 +51,19 @@
   ].join(",");
   const PRIMARY_ACTION = '[data-testid="lesson.primary_action_button"]';
   const VALIDATION_ACTION = '[data-testid$=".validation.action_button"]';
+  const COMPLETION_SCREEN = [
+    '[data-testid="lesson.completion_result.screen"]',
+    '[data-testid="lesson.completion.screen"]',
+  ].join(",");
+  const COMPLETION_ACTION = [
+    '[data-testid="lesson.completion_result.continue_button"]',
+    '[data-testid="lesson.completion.continue_button"]',
+    '[data-testid="lesson.completion.more_phrases_button"]',
+    '[data-testid="lesson.wordsFollowupSurface.continue"]',
+    '[data-testid="vocabulary_training.completion.continue_button"]',
+  ].join(",");
+  const COMPLETION_RATING_STAR =
+    '[data-testid^="lesson.completion.feedback_star."]';
   const ANSWERS_VIEWPORT = '[data-testid$=".answers_viewport"]';
   const ITEM_ID_PREFIXES = [".answer.", ".keyboard.", ".task."];
   const ACTION_DEBOUNCE_MS = 300;
@@ -124,7 +137,12 @@
   function isLessonActive() {
     return (
       visibleElements(
-        '[data-testid="lesson.close_button"], [data-testid="lesson.primary_action_button"]',
+        [
+          '[data-testid="lesson.close_button"]',
+          '[data-testid="lesson.primary_action_button"]',
+          COMPLETION_SCREEN,
+          COMPLETION_ACTION,
+        ].join(","),
       ).length > 0
     );
   }
@@ -292,7 +310,40 @@
     const primaryActions = visibleElements(PRIMARY_ACTION).filter(
       (element) => !isDisabled(element),
     );
-    return primaryActions.at(-1) || null;
+    if (primaryActions.length > 0) {
+      return primaryActions.at(-1);
+    }
+
+    const completionActions = visibleElements(COMPLETION_ACTION).filter(
+      (element) => !isDisabled(element),
+    );
+    if (completionActions.length > 0) {
+      return completionActions.at(-1);
+    }
+
+    // Some completion variants render the continue button without a test ID.
+    for (const screen of visibleElements(COMPLETION_SCREEN).reverse()) {
+      const fallback = [...screen.querySelectorAll("button, [role='button']")]
+        .filter((element) => !isDisabled(element))
+        .find((element) =>
+          /^(下一页|继续|continue|next)$/i.test(shortLabel(element)),
+        );
+      if (fallback) {
+        return fallback;
+      }
+    }
+
+    return null;
+  }
+
+  function getCompletionRatingCandidates() {
+    if (visibleElements(COMPLETION_SCREEN).length === 0) {
+      return [];
+    }
+
+    return visibleElements(COMPLETION_RATING_STAR).filter(
+      (element) => !isDisabled(element),
+    );
   }
 
   function activateAction(event) {
@@ -443,7 +494,16 @@
     const index = Number(event.key) - 1;
     const candidate = candidates[index];
     if (!candidate) {
-      return false;
+      const ratingCandidates = getCompletionRatingCandidates();
+      const ratingCandidate = ratingCandidates[index];
+      if (!ratingCandidate) {
+        return false;
+      }
+
+      event.preventDefault();
+      ratingCandidate.click();
+      announce(`已评价 ${index + 1} 星`);
+      return true;
     }
 
     event.preventDefault();
@@ -925,10 +985,10 @@
             <button class="close" type="button" aria-label="关闭快捷键帮助">×</button>
           </div>
           <dl class="rows">
-            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交</dd>
+            <dt><kbd>Enter</kbd></dt><dd>检查 / 继续 / 提交 / 下一页</dd>
             <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>聚焦上一个 / 下一个选项</dd>
             <dt><kbd>Space</kbd></dt><dd>选择当前聚焦的选项</dd>
-            <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项</dd>
+            <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项；完成页按 1–5 评价星级</dd>
             <dt><kbd>A</kbd>–<kbd>Z</kbd></dt><dd>连续输入词块文字，如 <kbd>a</kbd><kbd>m</kbd> 选择 am</dd>
             <dt><kbd>Home</kbd><kbd>End</kbd></dt><dd>第一项 / 最后一项</dd>
             <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>重播可见音频</dd>
