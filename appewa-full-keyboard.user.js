@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.3
+// @version      0.1.4
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.3";
+  const VERSION = "0.1.4";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -130,9 +130,15 @@
     }
 
     const interactiveAncestor = sourceElement.closest(INTERACTIVE_SELECTOR);
-    return interactiveAncestor && scope.contains(interactiveAncestor)
-      ? interactiveAncestor
-      : null;
+    if (interactiveAncestor && scope.contains(interactiveAncestor)) {
+      return interactiveAncestor;
+    }
+
+    return (
+      [...sourceElement.querySelectorAll(INTERACTIVE_SELECTOR)].find(
+        (element) => scope.contains(element) && isVisible(element),
+      ) || null
+    );
   }
 
   function getAnswerCandidates() {
@@ -202,6 +208,18 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 48);
+  }
+
+  function exactCandidateLabel(element) {
+    return (
+      element.getAttribute("aria-label") ||
+      element.innerText ||
+      element.textContent ||
+      ""
+    )
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleLowerCase();
   }
 
   function announce(message) {
@@ -357,6 +375,26 @@
     focusCandidate(candidate);
     candidate.click();
     announce(`已选择第 ${index + 1} 项：${shortLabel(candidate)}`);
+    return true;
+  }
+
+  function handleLetter(event) {
+    if (event.repeat || !/^[a-z]$/i.test(event.key)) {
+      return false;
+    }
+
+    const typed = event.key.toLocaleLowerCase();
+    const candidate = getAnswerCandidates().find(
+      (element) => exactCandidateLabel(element) === typed,
+    );
+    if (!candidate) {
+      return false;
+    }
+
+    event.preventDefault();
+    focusCandidate(candidate);
+    candidate.click();
+    announce(`已选择：${shortLabel(candidate)}`);
     return true;
   }
 
@@ -535,6 +573,10 @@
       if (!event.repeat) {
         handleHomeEnd(event);
       }
+      return;
+    }
+
+    if (handleLetter(event)) {
       return;
     }
 
@@ -746,6 +788,7 @@
             <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>聚焦上一个 / 下一个选项</dd>
             <dt><kbd>Space</kbd></dt><dd>选择当前聚焦的选项</dd>
             <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项</dd>
+            <dt><kbd>A</kbd>–<kbd>Z</kbd></dt><dd>选择同名的单词块</dd>
             <dt><kbd>Home</kbd><kbd>End</kbd></dt><dd>第一项 / 最后一项</dd>
             <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>重播可见音频</dd>
             <dt><kbd>Alt</kbd>+<kbd>S</kbd></dt><dd>慢速播放</dd>

@@ -1,6 +1,6 @@
 # Appewa Full Keyboard
 
-这是一个用于 Appewa（`app.appewa.com`）课程页的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.3`。
+这是一个用于 Appewa（`app.appewa.com`）课程页的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.4`。
 
 - [GitHub 仓库](https://github.com/monkey-sking/appewa-full-keyboard)
 - [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-full-keyboard.user.js)
@@ -26,6 +26,7 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-
 | `↑` / `↓` / `←` / `→` | 聚焦上一个或下一个选项、词语块 |
 | `Space` | 选择当前聚焦的选项（原生按钮和 `div[role]` 均可） |
 | `1`–`9` | 直接触发第 N 个可见选项或词语块 |
+| `A`–`Z` | 直接选择与所按字母同名的可见词语块 |
 | `Home` / `End` | 聚焦第一项 / 最后一项 |
 | `Alt+R` | 重播当前可见音频 |
 | `Alt+S` | 慢速播放（页面提供时） |
@@ -78,7 +79,8 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/main/appewa-
 
 - `Enter` 触发检查/继续，验证弹层按钮优先于主按钮。
 - 退出确认弹层存在时，`Enter` 不会绕过确认直接提交。
-- 方向键跳过禁用和隐藏选项，`Space` 与 `1`–`9` 可激活选项。
+- 方向键跳过禁用和隐藏选项，`Space` 与 `1`–`9` 可激活选项；按钮嵌在普通 `div` 中时也能正确定位。
+- 词语块与所按字母同名时，直接按 `A`–`Z` 即可选择，例如输入 `i` 会点击可见的 `I` 词块。
 - 输入框中的字母、`Backspace` 和 `Enter` 保持网站原生行为。
 - `F1` 打开帮助、`Esc` 仅关闭帮助并恢复焦点。
 - `Alt+R`、`Alt+S`、`Alt+H` 分别触发播放、慢速和提示控件。
