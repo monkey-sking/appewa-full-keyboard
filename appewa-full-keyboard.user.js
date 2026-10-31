@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.4
+// @version      0.1.5
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.4";
+  const VERSION = "0.1.5";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -39,6 +39,7 @@
   const ANSWERS_VIEWPORT = '[data-testid$=".answers_viewport"]';
   const ITEM_ID_PREFIXES = [".answer.", ".keyboard.", ".task."];
   const ACTION_DEBOUNCE_MS = 300;
+  const LETTER_BUFFER_TIMEOUT_MS = 1200;
 
   if (window[GLOBAL_KEY]?.version) {
     return;
@@ -53,6 +54,8 @@
   let helpOpen = false;
   let helpReturnFocus = null;
   let lastActionAt = 0;
+  let letterBuffer = "";
+  let letterBufferAt = 0;
   let syncQueued = false;
 
   function visibleElements(selector, root = document) {
@@ -222,6 +225,22 @@
       .toLocaleLowerCase();
   }
 
+  function tokenTypingLabel(element) {
+    return exactCandidateLabel(element)
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^\p{L}]/gu, "");
+  }
+
+  function isLetterKey(key) {
+    return /^\p{L}$/u.test(key);
+  }
+
+  function resetLetterBuffer() {
+    letterBuffer = "";
+    letterBufferAt = 0;
+  }
+
   function announce(message) {
     if (liveStatus) {
       liveStatus.textContent = message;
@@ -379,23 +398,72 @@
   }
 
   function handleLetter(event) {
-    if (event.repeat || !/^[a-z]$/i.test(event.key)) {
+    if (event.repeat || !isLetterKey(event.key)) {
       return false;
     }
 
-    const typed = event.key.toLocaleLowerCase();
-    const candidate = getAnswerCandidates().find(
-      (element) => exactCandidateLabel(element) === typed,
+    const now = performance.now();
+    if (now - letterBufferAt > LETTER_BUFFER_TIMEOUT_MS) {
+      resetLetterBuffer();
+    }
+
+    const key = event.key
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLocaleLowerCase();
+    const candidates = getAnswerCandidates().filter((element) =>
+      tokenTypingLabel(element),
     );
-    if (!candidate) {
-      return false;
+    let typed = letterBuffer + key;
+    let exact = candidates.find(
+      (element) => tokenTypingLabel(element) === typed,
+    );
+
+    if (exact) {
+      event.preventDefault();
+      resetLetterBuffer();
+      focusCandidate(exact);
+      exact.click();
+      announce(`已选择：${shortLabel(exact)}`);
+      return true;
     }
 
-    event.preventDefault();
-    focusCandidate(candidate);
-    candidate.click();
-    announce(`已选择：${shortLabel(candidate)}`);
-    return true;
+    if (
+      candidates.some((element) => tokenTypingLabel(element).startsWith(typed))
+    ) {
+      event.preventDefault();
+      letterBuffer = typed;
+      letterBufferAt = now;
+      announce(`正在匹配：${typed}`);
+      return true;
+    }
+
+    // If the current sequence is not a prefix, treat the key as a fresh start.
+    typed = key;
+    exact = candidates.find(
+      (element) => tokenTypingLabel(element) === typed,
+    );
+    if (exact) {
+      event.preventDefault();
+      resetLetterBuffer();
+      focusCandidate(exact);
+      exact.click();
+      announce(`已选择：${shortLabel(exact)}`);
+      return true;
+    }
+
+    if (
+      candidates.some((element) => tokenTypingLabel(element).startsWith(typed))
+    ) {
+      event.preventDefault();
+      letterBuffer = typed;
+      letterBufferAt = now;
+      announce(`正在匹配：${typed}`);
+      return true;
+    }
+
+    resetLetterBuffer();
+    return false;
   }
 
   function handleSpace(event) {
@@ -512,6 +580,23 @@
       event.keyCode === 229
     ) {
       return;
+    }
+
+    if (
+      event.key === "Backspace" &&
+      letterBuffer &&
+      !event.composedPath().includes(uiHost) &&
+      !isEditableEvent(event)
+    ) {
+      event.preventDefault();
+      letterBuffer = letterBuffer.slice(0, -1);
+      letterBufferAt = performance.now();
+      announce(letterBuffer ? `正在匹配：${letterBuffer}` : "已清除输入匹配");
+      return;
+    }
+
+    if (!isLetterKey(event.key)) {
+      resetLetterBuffer();
     }
 
     const fromUi = event.composedPath().includes(uiHost);
@@ -788,7 +873,7 @@
             <dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>聚焦上一个 / 下一个选项</dd>
             <dt><kbd>Space</kbd></dt><dd>选择当前聚焦的选项</dd>
             <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>直接选择第 N 项</dd>
-            <dt><kbd>A</kbd>–<kbd>Z</kbd></dt><dd>选择同名的单词块</dd>
+            <dt><kbd>A</kbd>–<kbd>Z</kbd></dt><dd>连续输入词块文字，如 <kbd>a</kbd><kbd>m</kbd> 选择 am</dd>
             <dt><kbd>Home</kbd><kbd>End</kbd></dt><dd>第一项 / 最后一项</dd>
             <dt><kbd>Alt</kbd>+<kbd>R</kbd></dt><dd>重播可见音频</dd>
             <dt><kbd>Alt</kbd>+<kbd>S</kbd></dt><dd>慢速播放</dd>
