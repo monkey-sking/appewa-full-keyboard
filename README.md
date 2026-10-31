@@ -1,6 +1,6 @@
 # Appewa Full Keyboard
 
-这是一个用于 Appewa（`app.appewa.com`）课程页的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.8`。
+这是一个用于 Appewa（`app.appewa.com`）课程页的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力。当前版本：`0.1.9`。
 
 - [GitHub 仓库](https://github.com/monkey-sking/appewa-full-keyboard)
 - [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js)
@@ -78,6 +78,7 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 已完成脚本语法检查和本地模拟页面交互测试，覆盖：
 
 - `Enter` 首次会聚焦并触发检查/继续；如果站点没有接受脚本触发的点击，焦点已经停留在主按钮，再按一次 `Enter` 会由浏览器原生激活。验证弹层按钮优先于主按钮。
+- 键盘监听在捕获阶段运行，Appewa 的 React Native Web 按钮拦截 `keydown` 时不会吞掉脚本快捷键。
 - 退出确认弹层存在时，`Enter` 不会绕过确认直接提交。
 - 方向键跳过禁用和隐藏选项，`Space` 与 `1`–`9` 可激活选项；词块外层可聚焦、内层才是实际按钮时，会优先点击内层按钮。
 - 词语块支持连续字母匹配，例如快速输入 `am` 会点击可见的 `am` 词块；单词块仍可只按首字母选择，例如输入 `i` 会点击可见的 `I` 词块。

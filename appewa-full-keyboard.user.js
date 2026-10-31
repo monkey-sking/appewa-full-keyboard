@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.1.8
+// @version      0.1.9
 // @description  Add keyboard-only navigation and confirmation controls to Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -16,7 +16,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.1.8";
+  const VERSION = "0.1.9";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const EDITABLE_SELECTOR =
@@ -303,6 +303,7 @@
     }
 
     event.preventDefault();
+    event.stopPropagation();
     if (event.repeat) {
       return true;
     }
@@ -372,6 +373,7 @@
     }
 
     event.preventDefault();
+    event.stopPropagation();
     if (event.repeat) {
       return true;
     }
@@ -972,5 +974,7 @@
   }
 
   createUi();
-  document.addEventListener("keydown", handleKeydown, false);
+  // Appewa uses React Native Web Pressables, whose key handlers stop
+  // propagation for Enter. Capture the event before those handlers run.
+  document.addEventListener("keydown", handleKeydown, true);
 })();
