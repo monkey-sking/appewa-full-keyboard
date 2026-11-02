@@ -1,6 +1,6 @@
 # Appewa Full Keyboard
 
-这是一个用于 Appewa（`app.appewa.com`）课程页和 Roadmap 的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力，并提供本地错题记录与可选 AI 复习总结。当前版本：`0.2.0`。
+这是一个用于 Appewa（`app.appewa.com`）课程页和 Roadmap 的 Tampermonkey 用户脚本，补上网站当前缺少的键盘确认、继续和选项导航能力，并提供本地错题记录与可选 AI 复习总结。当前版本：`0.2.1`。
 
 - [GitHub 仓库](https://github.com/monkey-sking/appewa-full-keyboard)
 - [一键安装到 Tampermonkey](https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/main/appewa-full-keyboard.user.js)
@@ -26,7 +26,7 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 | `↑` / `↓` / `←` / `→` | 聚焦上一个或下一个选项、词语块 |
 | `Space` | 选择当前聚焦的选项（原生按钮和 `div[role]` 均可） |
 | `1`–`9` | 直接触发第 N 个可见选项或词语块；课程完成页用 `1`–`5` 评价星级 |
-| `A`–`Z` | 连续输入词块文字；例如依次输入 `a`、`m` 选择 `am` 词块 |
+| `A`–`Z` | 连续输入词块文字；例如依次输入 `a`、`m` 选择 `am` 词块。短词同时是长词前缀（如 `I` 与 `It'll`）时，按 `i` 进入 300ms 歧义缓冲；继续输入 `t`/`itll`/`it'll` 匹配长词；`Space`/`Enter` 或等待 300ms 确认短词 |
 | `Home` / `End` | 聚焦第一项 / 最后一项 |
 | `Alt+R` | 重播当前可见音频 |
 | `Alt+S` | 慢速播放（页面提供时） |
@@ -47,16 +47,16 @@ https://raw.githubusercontent.com/monkey-sking/appewa-full-keyboard/refs/heads/m
 - 发送内容不包含 Appewa 账号、Cookie 或页面 URL。API Key 同样只保存在本机脚本存储中，不写入本仓库。
 - 不配置 AI 接口时，本地错题本仍然可以正常使用。
 
-AI 配置面板支持 OpenAI 兼容的 Chat Completions 接口，例如：
+AI 配置面板支持任意 OpenAI 兼容的 Chat Completions 接口。通常只需要填写服务地址和 API Key，脚本会自动补全 `/chat/completions` 并读取模型列表，选择可用的聊天模型。例如：
 
-| 服务 | 接口地址示例 | 模型示例 |
-| --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1/chat/completions` | `gpt-4.1-mini` |
-| DeepSeek | `https://api.deepseek.com/chat/completions` | `deepseek-chat` |
-| OpenRouter | `https://openrouter.ai/api/v1/chat/completions` | 服务商页面上的完整模型名 |
-| 本机模型 | `http://localhost:11434/v1/chat/completions` | 本机已安装的模型名 |
+| 服务 | 接口地址示例 |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| DeepSeek | `https://api.deepseek.com` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| 本机模型 | `http://localhost:11434/v1` |
 
-远程接口必须使用 HTTPS；HTTP 仅允许 `localhost`、`127.0.0.1` 和 `::1`。不同服务可能产生 API 费用，请先确认自己的账户和模型价格。脚本不绕过 Appewa 的体力、会员或付费限制。
+也可以粘贴以 `/chat/completions` 结尾的完整接口地址。模型一栏通常留空；如果服务不提供模型列表，或自动选择的结果不适合，再手动填写完整模型名。远程接口必须使用 HTTPS；HTTP 仅允许 `localhost`、`127.0.0.1` 和 `::1`。不同服务可能产生 API 费用，请先确认自己的账户和模型价格。脚本不绕过 Appewa 的体力、会员或付费限制。
 
 ## 支持的练习
 
@@ -91,7 +91,7 @@ AI 配置面板支持 OpenAI 兼容的 Chat Completions 接口，例如：
 已核对线上页面与公开前端 bundle（EWA `26.1030.9867`）：
 
 - 网站自带 `LessonKeyboard`，只处理字母和 `Backspace`，没有 `Enter`、方向键或确认按钮的全局快捷键。
-- 主操作按钮稳定使用 `lesson.primary_action_button`。
+- 多数练习的主操作按钮使用 `lesson.primary_action_button`；讲解卡、语法卡的底部“继续”没有稳定 test ID，按可见文案兜底识别。
 - 验证弹层操作使用 `*.validation.action_button`。
 - 选项区域及选项项使用 `*.answers_viewport`、`*.answer.*`、`*.keyboard.*`、`*.task.*`。
 - 实际课程页只读检查确认存在 `lesson.close_button`、`lesson.primary_action_button`、`exercise.renderer.<uuid>.answers_viewport` 和 `exercise.renderer.<uuid>.questions.hint_button`。
@@ -102,6 +102,8 @@ AI 配置面板支持 OpenAI 兼容的 Chat Completions 接口，例如：
 
 已完成脚本语法检查和本地模拟页面交互测试，覆盖：
 
+- 讲解页、语法卡等无 `lesson.primary_action_button` 测试 ID 的底部“继续”/“下一步”按钮可被 `Enter` 识别并触发。
+- 真实 `<button>` 聚焦时仍允许浏览器原生 Enter 处理；无原生按键激活的 `div[role="button"]` 始终通过模拟 pointer/mouse/click 事件可靠激活。
 - `Enter` 首次会聚焦并触发检查/继续；如果站点没有接受脚本触发的点击，焦点已经停留在主按钮，再按一次 `Enter` 会由浏览器原生激活。验证弹层按钮优先于主按钮。
 - 键盘监听在捕获阶段运行，Appewa 的 React Native Web 按钮拦截 `keydown` 时不会吞掉脚本快捷键。
 - 退出确认弹层存在时，`Enter` 不会绕过确认直接提交。
@@ -111,12 +113,12 @@ AI 配置面板支持 OpenAI 兼容的 Chat Completions 接口，例如：
 - `F1` 打开帮助并显示当前脚本版本，`Esc` 关闭当前脚本面板并恢复焦点。
 - `Alt+R`、`Alt+S`、`Alt+H` 分别触发播放、慢速和提示控件。
 - `Alt+M` 打开错题本；错误反馈只记录一次，第二次尝试答错才新增记录。
-- 错题本默认不发起任何网络请求；模拟 AI 接口验证了仅在点击生成后发送精简错题并显示返回总结。
+- 错题本默认不发起任何网络请求；本地验证用模拟接口确认了仅填写地址和 Key 即可自动识别模型，真实使用时保存配置会读取服务提供的模型列表；生成总结时才会发送精简错题。
 - API 设置和错题记录可跨页面重载保留；清空操作会同时清除上次 AI 总结。
 - 课程完成页可识别 `lesson.completion_result.continue_button` 等继续按钮；按 `Enter` 进入“下一页”，按 `1`–`5` 选择课程评分。
 - Roadmap 页可识别 `roadmap.continue_button`；按 `Enter` 继续当前课程，聚焦其他原生按钮时仍由浏览器处理 Enter。
 - Roadmap 能力值弹层可识别 `energy.activity_popup.primary_button`；弹层打开后按 `Enter` 直接开始课程，不会被全屏遮罩按钮截获。
 
-也对当前线上课程页和 Roadmap DOM 做了只读匹配检查。`0.2.0` 的验证没有提交当前练习、没有改变课程进度，也没有提交课程评分或调用真实 AI 接口。
+也对当前线上课程页和 Roadmap DOM 做了只读匹配检查。`0.2.1` 的验证没有提交当前练习、没有改变课程进度，也没有提交课程评分或调用真实 AI 接口。
 
 尚未在当前浏览器中做完整的逐题人工验收；不同课程若新增了不带上述 `data-testid` 的控件，可能需要补充选择器。

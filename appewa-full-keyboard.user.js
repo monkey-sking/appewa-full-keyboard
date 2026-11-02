@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Appewa Full Keyboard
 // @namespace    https://github.com/monkey-sking/appewa-full-keyboard
-// @version      0.2.0
+// @version      0.2.1
 // @description  Keyboard navigation, a local mistake notebook, and optional AI review for Appewa lessons.
 // @author       monkey-sking
 // @homepageURL  https://github.com/monkey-sking/appewa-full-keyboard
@@ -21,12 +21,13 @@
 // @connect      generativelanguage.googleapis.com
 // @connect      localhost
 // @connect      127.0.0.1
+// @connect      *
 // ==/UserScript==
 
 (() => {
   "use strict";
 
-  const VERSION = "0.2.0";
+  const VERSION = "0.2.1";
   const GLOBAL_KEY = "__appewaFullKeyboard";
   const HOST_ID = "appewa-full-keyboard";
   const MISTAKES_KEY = "appewa-ai-mistakes-v1";
@@ -96,11 +97,14 @@
     '[data-testid$=".validation.title.incorrect"]';
   const ITEM_ID_PREFIXES = [".answer.", ".keyboard.", ".task."];
   const ACTION_DEBOUNCE_MS = 300;
+  const AMBIGUOUS_LETTER_DELAY_MS = 300;
   const LETTER_BUFFER_TIMEOUT_MS = 1200;
   const DEFAULT_AI_SETTINGS = {
-    apiUrl: "https://api.openai.com/v1/chat/completions",
-    model: "gpt-4.1-mini",
+    apiUrl: "https://api.openai.com/v1",
+    model: "",
   };
+  const AI_MODEL_EXCLUDE_PATTERN =
+    /(audio|dall-e|embed|image|moderation|realtime|rerank|speech|transcri|tts|video|whisper)/i;
 
   if (window[GLOBAL_KEY]?.version) {
     return;
@@ -134,6 +138,8 @@
   let lastActionAt = -Infinity;
   let letterBuffer = "";
   let letterBufferAt = 0;
+  let pendingCandidate = null;
+  let pendingCandidateTimer = null;
   let syncQueued = false;
   let mistakeScanQueued = false;
   let mistakes = [];
@@ -141,6 +147,7 @@
   let incorrectFeedbackBase = "";
   let incorrectFeedbackResetTimer = null;
   let aiBusy = false;
+  let aiSettingsBusy = false;
 
   function visibleElements(selector, root = document) {
     return [...root.querySelectorAll(selector)].filter(isVisible);
@@ -209,8 +216,9 @@
           COMPLETION_SCREEN,
           COMPLETION_ACTION,
           ROADMAP_SCREEN,
+          ROADMAP_CONTINUE,
         ].join(","),
-      ).length > 0
+      ).length > 0 || Boolean(findFallbackContinueAction())
     );
   }
 
@@ -528,8 +536,30 @@
   }
 
   function resetLetterBuffer() {
+    clearPendingCandidate();
     letterBuffer = "";
     letterBufferAt = 0;
+  }
+
+  function clearPendingCandidate() {
+    if (pendingCandidateTimer !== null) {
+      clearTimeout(pendingCandidateTimer);
+      pendingCandidateTimer = null;
+    }
+    pendingCandidate = null;
+  }
+
+  function commitPendingCandidate() {
+    if (!pendingCandidate) {
+      return false;
+    }
+    const candidate = pendingCandidate;
+    clearPendingCandidate();
+    resetLetterBuffer();
+    focusCandidate(candidate);
+    activateElement(candidate);
+    announce(`已选择：${shortLabel(candidate)}`);
+    return true;
   }
 
   function announce(message) {
@@ -600,7 +630,85 @@
       }
     }
 
+    const fallbackContinue = findFallbackContinueAction();
+    if (fallbackContinue) {
+      return fallbackContinue;
+    }
+
     return null;
+  }
+
+  function findFallbackContinueAction() {
+    const candidates = visibleElements("button, [role='button']").filter(
+      (element) => {
+        if (isDisabled(element) || !isInViewport(element)) {
+          return false;
+        }
+        if (uiHost && (element === uiHost || uiHost.contains(element))) {
+          return false;
+        }
+        if (element.closest(ANSWERS_VIEWPORT)) {
+          return false;
+        }
+        if (element.closest(ENERGY_ACTIVITY_POPUP)) {
+          return false;
+        }
+        const label = shortLabel(element);
+        return /^(继续|下一步|完成|检查|下一页|开始|continue|next|check|finish|start)$/i.test(
+          label,
+        );
+      },
+    );
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const deduplicated = candidates.filter(
+      (element) =>
+        !candidates.some(
+          (other) => other !== element && other.contains(element),
+        ),
+    );
+
+    deduplicated.sort((a, b) => {
+      const rectA = a.getBoundingClientRect();
+      const rectB = b.getBoundingClientRect();
+      return rectB.bottom - rectA.bottom;
+    });
+
+    return deduplicated[0] || null;
+  }
+
+  function activateElement(element) {
+    if (!element || typeof element.click !== "function") {
+      return;
+    }
+
+    try {
+      const rect = element.getBoundingClientRect();
+      const clientX = rect.left + rect.width / 2;
+      const clientY = rect.top + rect.height / 2;
+      const eventInit = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: window,
+        clientX,
+        clientY,
+      };
+
+      if (typeof PointerEvent === "function") {
+        element.dispatchEvent(new PointerEvent("pointerdown", eventInit));
+        element.dispatchEvent(new PointerEvent("pointerup", eventInit));
+      }
+      element.dispatchEvent(new MouseEvent("mousedown", eventInit));
+      element.dispatchEvent(new MouseEvent("mouseup", eventInit));
+    } catch {
+      // Fallback to plain click if synthetic pointer events fail.
+    }
+
+    element.click();
   }
 
   function findEnergyActivityAction() {
@@ -654,9 +762,18 @@
 
     lastActionAt = now;
     const label = shortLabel(action);
-    action.click();
+    activateElement(action);
     announce(label ? `已触发：${label}` : "已触发主操作。");
     return true;
+  }
+
+  function isTrueNativeButton(element) {
+    return Boolean(
+      element instanceof Element &&
+        (element.tagName === "BUTTON" ||
+          (element.tagName === "INPUT" &&
+            /^(button|submit|reset)$/i.test(element.type))),
+    );
   }
 
   function isNativeEnterTarget(element) {
@@ -664,7 +781,7 @@
       element instanceof Element &&
         element !== document.body &&
         element.matches(
-          'button, a[href], summary, input, textarea, select, [contenteditable], [role="button"], [role="link"], [role="radio"], [role="checkbox"], [role="option"], [role="tab"], [role="menuitem"]',
+          'button, a[href], summary, input, textarea, select, [contenteditable]',
         ),
     );
   }
@@ -689,6 +806,12 @@
   }
 
   function handleEnter(event) {
+    if (commitPendingCandidate()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+
     const action = findFocusAction();
     const energyAction = findEnergyActivityAction();
     const candidates = getAnswerCandidates();
@@ -701,16 +824,18 @@
     if (
       active instanceof Element &&
       action &&
-      (active === action || action.contains(active))
+      (active === action || action.contains(active)) &&
+      isTrueNativeButton(active)
     ) {
-      // Let the browser handle subsequent Enter presses natively. This is the
-      // fallback when Appewa ignores the synthetic click on the first press.
+      // Let the browser handle subsequent Enter presses natively for true native buttons.
       return false;
     }
     if (
       activeIndex < 0 &&
       isNativeEnterTarget(active) &&
-      (!energyAction || activeInEnergyPopup)
+      (!energyAction || activeInEnergyPopup) &&
+      active !== action &&
+      !action?.contains(active)
     ) {
       return false;
     }
@@ -737,7 +862,7 @@
     lastActionAt = now;
     focusCandidate(action);
     const label = shortLabel(action);
-    action.click();
+    activateElement(action);
     announce(label ? `已触发：${label}` : "已触发主操作。");
     return true;
   }
@@ -801,14 +926,14 @@
       }
 
       event.preventDefault();
-      ratingCandidate.click();
+      activateElement(ratingCandidate);
       announce(`已评价 ${index + 1} 星`);
       return true;
     }
 
     event.preventDefault();
     focusCandidate(candidate);
-    candidate.click();
+    activateElement(candidate);
     announce(`已选择第 ${index + 1} 项：${shortLabel(candidate)}`);
     return true;
   }
@@ -827,27 +952,59 @@
       .normalize("NFD")
       .replace(/\p{M}/gu, "")
       .toLocaleLowerCase();
-    const candidates = getAnswerCandidates().filter((element) =>
+    let candidates = getAnswerCandidates().filter((element) =>
       tokenTypingLabel(element),
     );
     let typed = letterBuffer + key;
+
+    const matchesPrefixOrExact = candidates.some((element) => {
+      const label = tokenTypingLabel(element);
+      return label === typed || label.startsWith(typed);
+    });
+
+    if (!matchesPrefixOrExact && pendingCandidate) {
+      commitPendingCandidate();
+      candidates = getAnswerCandidates().filter((element) =>
+        tokenTypingLabel(element),
+      );
+      typed = key;
+    }
+
     let exact = candidates.find(
       (element) => tokenTypingLabel(element) === typed,
     );
+    let hasLonger = candidates.some((element) => {
+      const label = tokenTypingLabel(element);
+      return label.startsWith(typed) && label.length > typed.length;
+    });
 
-    if (exact) {
+    if (exact && !hasLonger) {
       event.preventDefault();
+      clearPendingCandidate();
       resetLetterBuffer();
       focusCandidate(exact);
-      exact.click();
+      activateElement(exact);
       announce(`已选择：${shortLabel(exact)}`);
       return true;
     }
 
-    if (
-      candidates.some((element) => tokenTypingLabel(element).startsWith(typed))
-    ) {
+    if (exact && hasLonger) {
       event.preventDefault();
+      clearPendingCandidate();
+      pendingCandidate = exact;
+      focusCandidate(exact);
+      pendingCandidateTimer = setTimeout(() => {
+        commitPendingCandidate();
+      }, AMBIGUOUS_LETTER_DELAY_MS);
+      letterBuffer = typed;
+      letterBufferAt = now;
+      announce(`正在匹配：${shortLabel(exact)}（继续输入或稍候确认）`);
+      return true;
+    }
+
+    if (hasLonger) {
+      event.preventDefault();
+      clearPendingCandidate();
       letterBuffer = typed;
       letterBufferAt = now;
       announce(`正在匹配：${typed}`);
@@ -859,30 +1016,56 @@
     exact = candidates.find(
       (element) => tokenTypingLabel(element) === typed,
     );
-    if (exact) {
+    hasLonger = candidates.some((element) => {
+      const label = tokenTypingLabel(element);
+      return label.startsWith(typed) && label.length > typed.length;
+    });
+
+    if (exact && !hasLonger) {
       event.preventDefault();
+      clearPendingCandidate();
       resetLetterBuffer();
       focusCandidate(exact);
-      exact.click();
+      activateElement(exact);
       announce(`已选择：${shortLabel(exact)}`);
       return true;
     }
 
-    if (
-      candidates.some((element) => tokenTypingLabel(element).startsWith(typed))
-    ) {
+    if (exact && hasLonger) {
       event.preventDefault();
+      clearPendingCandidate();
+      pendingCandidate = exact;
+      focusCandidate(exact);
+      pendingCandidateTimer = setTimeout(() => {
+        commitPendingCandidate();
+      }, AMBIGUOUS_LETTER_DELAY_MS);
+      letterBuffer = typed;
+      letterBufferAt = now;
+      announce(`正在匹配：${shortLabel(exact)}（继续输入或稍候确认）`);
+      return true;
+    }
+
+    if (hasLonger) {
+      event.preventDefault();
+      clearPendingCandidate();
       letterBuffer = typed;
       letterBufferAt = now;
       announce(`正在匹配：${typed}`);
       return true;
     }
 
+    clearPendingCandidate();
     resetLetterBuffer();
     return false;
   }
 
   function handleSpace(event) {
+    if (commitPendingCandidate()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+
     const candidates = getAnswerCandidates();
     const activeIndex = focusedCandidateIndex(candidates);
     if (activeIndex < 0) {
@@ -892,7 +1075,7 @@
     event.preventDefault();
     if (!event.repeat) {
       const candidate = candidates[activeIndex];
-      candidate.click();
+      activateElement(candidate);
       announce(`已选择：${shortLabel(candidate)}`);
     }
     return true;
@@ -929,7 +1112,7 @@
       aiSettings = {
         ...DEFAULT_AI_SETTINGS,
         apiUrl: compactText(storedSettings.apiUrl, 500) || DEFAULT_AI_SETTINGS.apiUrl,
-        model: compactText(storedSettings.model, 200) || DEFAULT_AI_SETTINGS.model,
+        model: compactText(storedSettings.model, 200),
       };
     }
 
@@ -1016,57 +1199,270 @@
     }
   }
 
-  function saveAiSettings() {
-    if (!aiUrlInput || !aiModelInput || !aiKeyInput) {
-      return false;
-    }
-
-    const apiUrl = compactText(aiUrlInput.value, 500);
-    const model = compactText(aiModelInput.value, 200);
-    if (!apiUrl || !model) {
-      showAiError("接口地址和模型名称不能为空。");
-      return false;
+  function normalizeAiEndpoint(value) {
+    const input = compactText(value, 500);
+    if (!input) {
+      throw new Error("请填写接口地址。");
     }
 
     let parsedUrl;
     try {
-      parsedUrl = new URL(apiUrl);
+      parsedUrl = new URL(input);
     } catch {
-      showAiError("接口地址格式不正确。");
-      return false;
+      throw new Error("接口地址格式不正确。");
     }
 
     const localHost = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(
       parsedUrl.hostname,
     );
     if (parsedUrl.protocol !== "https:" && !localHost) {
-      showAiError("远程接口必须使用 HTTPS；HTTP 只允许本机模型地址。");
+      throw new Error("远程接口必须使用 HTTPS；HTTP 只允许本机模型地址。");
+    }
+    if (parsedUrl.username || parsedUrl.password) {
+      throw new Error("接口地址里不要包含用户名或密码。");
+    }
+    if (parsedUrl.search || parsedUrl.hash) {
+      throw new Error("接口地址不要包含查询参数或锚点。");
+    }
+
+    let basePath = parsedUrl.pathname.replace(/\/+$/, "");
+    const hasChatSuffix = /\/chat\/completions$/i.test(basePath);
+    if (hasChatSuffix) {
+      basePath = basePath.replace(/\/chat\/completions$/i, "");
+    }
+    if (!basePath && !hasChatSuffix) {
+      if (parsedUrl.hostname === "openrouter.ai") {
+        basePath = "/api/v1";
+      } else if (parsedUrl.hostname === "dashscope.aliyuncs.com") {
+        basePath = "/compatible-mode/v1";
+      } else {
+        basePath = "/v1";
+      }
+    }
+
+    const baseUrl = new URL(parsedUrl.origin + basePath);
+    const chatUrl = new URL(baseUrl);
+    chatUrl.pathname = `${basePath}/chat/completions`;
+    const modelsUrl = new URL(baseUrl);
+    modelsUrl.pathname = `${basePath}/models`;
+
+    return {
+      baseUrl: baseUrl.toString().replace(/\/$/, ""),
+      chatUrl: chatUrl.toString(),
+      modelsUrl: modelsUrl.toString(),
+      host: parsedUrl.host,
+      localHost,
+    };
+  }
+
+  function scoreAiModel(modelId) {
+    const id = modelId.toLowerCase();
+    const preferred = [
+      [/^gpt-4\.1-mini$/, 120],
+      [/^gpt-4o-mini$/, 115],
+      [/^gpt-4\.1$/, 110],
+      [/^gpt-4o$/, 105],
+      [/^openai\/gpt-4\.1-mini$/, 120],
+      [/^openai\/gpt-4o-mini$/, 115],
+      [/^deepseek-chat$/, 110],
+      [/^qwen-plus$/, 105],
+      [/^qwen-turbo$/, 100],
+      [/^moonshot-v1-(8k|32k)$/, 95],
+      [/^openrouter\/auto$/, 90],
+      [/claude.*haiku/, 85],
+      [/gemini.*flash/, 80],
+      [/(chat|instruct)/, 40],
+    ];
+    const match = preferred.find(([pattern]) => pattern.test(id));
+    return match ? match[1] : 0;
+  }
+
+  function chooseAiModel(modelIds) {
+    const uniqueModels = [];
+    const seen = new Set();
+    for (const value of modelIds) {
+      const id = compactText(value, 200);
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      uniqueModels.push(id);
+    }
+
+    const chatModels = uniqueModels.filter(
+      (modelId) => !AI_MODEL_EXCLUDE_PATTERN.test(modelId),
+    );
+    const candidates = chatModels.length > 0 ? chatModels : uniqueModels;
+    let selected = "";
+    let selectedScore = -1;
+    for (const modelId of candidates) {
+      const score = scoreAiModel(modelId);
+      if (score > selectedScore) {
+        selected = modelId;
+        selectedScore = score;
+      }
+    }
+    return selected;
+  }
+
+  function fallbackAiModelForHost(hostname) {
+    if (hostname === "api.openai.com") {
+      return "gpt-4.1-mini";
+    }
+    if (hostname === "api.deepseek.com") {
+      return "deepseek-chat";
+    }
+    if (hostname === "api.moonshot.cn") {
+      return "moonshot-v1-8k";
+    }
+    if (hostname === "dashscope.aliyuncs.com") {
+      return "qwen-plus";
+    }
+    return "";
+  }
+
+  async function discoverAiModel({ modelsUrl, apiKey, hostname }) {
+    let response;
+    try {
+      response = await requestAiJson({
+        url: modelsUrl,
+        apiKey,
+        method: "GET",
+      });
+    } catch (error) {
+      const fallback = fallbackAiModelForHost(hostname);
+      if (fallback) {
+        return {
+          model: fallback,
+          warning: `${error instanceof Error ? error.message : String(error)} 已使用常用模型 ${fallback}。`,
+        };
+      }
+      throw error;
+    }
+
+    let payload;
+    try {
+      payload = JSON.parse(response.text);
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const detail = compactText(
+        payload?.error?.message || payload?.message || response.text,
+        300,
+      );
+      throw new Error(
+        `模型列表读取失败（HTTP ${response.status}）${detail ? `：${detail}` : ""}`,
+      );
+    }
+
+    const modelEntries = Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.models)
+        ? payload.models
+        : Array.isArray(payload)
+          ? payload
+          : [];
+    const modelIds = modelEntries.map((entry) =>
+      typeof entry === "string" ? entry : entry?.id || entry?.name || "",
+    );
+    const model = chooseAiModel(modelIds);
+    if (!model) {
+      throw new Error("服务没有返回可用模型，请在“模型（可选）”中手动填写。");
+    }
+    return { model, warning: "" };
+  }
+
+  function setAiSettingsBusy(busy) {
+    aiSettingsBusy = busy;
+    if (aiSaveButton) {
+      aiSaveButton.disabled = busy;
+      aiSaveButton.textContent = busy ? "正在识别模型…" : "保存设置";
+    }
+    if (aiGenerateButton) {
+      aiGenerateButton.disabled = busy || aiBusy;
+    }
+  }
+
+  async function saveAiSettings({ announceSuccess = true } = {}) {
+    if (!aiUrlInput || !aiModelInput || !aiKeyInput) {
+      return false;
+    }
+    if (aiSettingsBusy) {
+      return false;
+    }
+
+    const apiUrl = compactText(aiUrlInput.value, 500);
+    let endpoint;
+    try {
+      endpoint = normalizeAiEndpoint(apiUrl);
+    } catch (error) {
+      showAiError(error instanceof Error ? error.message : String(error));
       return false;
     }
 
     let previousHost = "";
     try {
-      previousHost = new URL(aiSettings.apiUrl).hostname;
+      previousHost = new URL(aiSettings.apiUrl).host;
     } catch {
       previousHost = "";
     }
-    aiSettings = { apiUrl, model };
-    writeStoredValue(AI_SETTINGS_KEY, aiSettings);
 
-    const apiKey = aiKeyInput.value.trim();
-    if (apiKey) {
-      writeStoredValue(AI_API_KEY_KEY, apiKey);
+    const enteredApiKey = aiKeyInput.value.trim();
+    const storedApiKey = readStoredValue(AI_API_KEY_KEY, "");
+    const apiKey =
+      enteredApiKey ||
+      (previousHost && previousHost === endpoint.host ? storedApiKey : "");
+    if (!apiKey && !endpoint.localHost) {
+      showAiError("请填写 API Key。");
+      return false;
+    }
+
+    let model = compactText(aiModelInput.value, 200);
+    if (
+      previousHost &&
+      previousHost !== endpoint.host &&
+      model === aiSettings.model
+    ) {
+      model = "";
+    }
+
+    let warning = "";
+    setAiSettingsBusy(true);
+    try {
+      if (!model) {
+        const discovered = await discoverAiModel({
+          modelsUrl: endpoint.modelsUrl,
+          apiKey,
+          hostname: new URL(endpoint.baseUrl).hostname,
+        });
+        model = discovered.model;
+        warning = discovered.warning;
+        aiModelInput.value = model;
+      }
+    } catch (error) {
+      showAiError(
+        `${error instanceof Error ? error.message : String(error)} 请展开“模型（可选）”手动填写。`,
+      );
+      return false;
+    } finally {
+      setAiSettingsBusy(false);
+    }
+
+    aiSettings = { apiUrl: endpoint.baseUrl, model };
+    writeStoredValue(AI_SETTINGS_KEY, aiSettings);
+    if (enteredApiKey) {
+      writeStoredValue(AI_API_KEY_KEY, enteredApiKey);
       aiKeyInput.value = "";
-    } else if (previousHost && previousHost !== parsedUrl.hostname) {
-      // Avoid accidentally sending an old provider's key to a new host.
-      writeStoredValue(AI_API_KEY_KEY, "");
     }
 
     aiKeyInput.placeholder = readStoredValue(AI_API_KEY_KEY, "")
       ? "已保存（留空则继续使用）"
       : "本地模型可留空";
-    showAiError("");
-    announce("AI 接口设置已保存。");
+    showAiError(warning);
+    if (announceSuccess) {
+      announce("AI 接口设置已保存，模型已自动识别。");
+    }
     return true;
   }
 
@@ -1092,12 +1488,15 @@
     }
   }
 
-  function requestAiJson({ url, apiKey, body }) {
-    const headers = { "Content-Type": "application/json" };
+  function requestAiJson({ url, apiKey, body, method = "POST" }) {
+    const headers = { Accept: "application/json" };
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
-    const data = JSON.stringify(body);
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    const data = body === undefined ? undefined : JSON.stringify(body);
     const gmRequest =
       typeof GM_xmlhttpRequest === "function"
         ? GM_xmlhttpRequest
@@ -1108,11 +1507,10 @@
 
     if (gmRequest) {
       return new Promise((resolve, reject) => {
-        gmRequest({
-          method: "POST",
+        const request = {
+          method,
           url,
           headers,
-          data,
           timeout: AI_TIMEOUT_MS,
           onload(response) {
             resolve({
@@ -1127,14 +1525,18 @@
           ontimeout() {
             reject(new Error("AI 请求超时，请稍后重试。"));
           },
-        });
+        };
+        if (data !== undefined) {
+          request.data = data;
+        }
+        gmRequest(request);
       });
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
     return fetch(url, {
-      method: "POST",
+      method,
       headers,
       body: data,
       signal: controller.signal,
@@ -1183,11 +1585,18 @@
       showAiError("还没有错题。答错一次后会自动记录。");
       return;
     }
-    if (!saveAiSettings()) {
+    if (!(await saveAiSettings({ announceSuccess: false }))) {
       return;
     }
 
     const apiKey = readStoredValue(AI_API_KEY_KEY, "");
+    let endpoint;
+    try {
+      endpoint = normalizeAiEndpoint(aiSettings.apiUrl);
+    } catch (error) {
+      showAiError(error instanceof Error ? error.message : String(error));
+      return;
+    }
     const summaryMistakes = mistakes
       .slice(0, MAX_SUMMARY_MISTAKES)
       .map((mistake) => ({
@@ -1207,7 +1616,7 @@
 
     try {
       const response = await requestAiJson({
-        url: aiSettings.apiUrl,
+        url: endpoint.chatUrl,
         apiKey,
         body: {
           model: aiSettings.model,
@@ -1434,19 +1843,37 @@
 
     if (
       event.key === "Backspace" &&
-      letterBuffer &&
+      (letterBuffer || pendingCandidate) &&
       !event.composedPath().includes(uiHost) &&
       !isEditableEvent(event)
     ) {
       event.preventDefault();
+      clearPendingCandidate();
       letterBuffer = letterBuffer.slice(0, -1);
       letterBufferAt = performance.now();
       announce(letterBuffer ? `正在匹配：${letterBuffer}` : "已清除输入匹配");
       return;
     }
 
-    if (!isLetterKey(event.key)) {
+    if (
+      !isLetterKey(event.key) &&
+      event.key !== "'" &&
+      event.key !== "’" &&
+      event.key !== "-" &&
+      event.key !== "Enter" &&
+      event.key !== " "
+    ) {
+      clearPendingCandidate();
       resetLetterBuffer();
+    }
+
+    if (event.key === "'" || event.key === "’" || event.key === "-") {
+      if (letterBuffer) {
+        event.preventDefault();
+        clearPendingCandidate();
+        announce(`正在匹配：${letterBuffer}`);
+        return;
+      }
     }
 
     const fromUi = event.composedPath().includes(uiHost);
@@ -1998,17 +2425,7 @@
                   type="url"
                   spellcheck="false"
                   autocomplete="off"
-                  placeholder="https://api.openai.com/v1/chat/completions"
-                />
-              </label>
-              <label class="field">
-                模型
-                <input
-                  class="ai-model"
-                  type="text"
-                  spellcheck="false"
-                  autocomplete="off"
-                  placeholder="gpt-4.1-mini"
+                  placeholder="https://api.openai.com/v1"
                 />
               </label>
               <label class="field">
@@ -2019,6 +2436,16 @@
                   spellcheck="false"
                   autocomplete="new-password"
                   placeholder="只保存在本机脚本存储中"
+                />
+              </label>
+              <label class="field">
+                模型（可选）
+                <input
+                  class="ai-model"
+                  type="text"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="留空自动识别，通常无需填写"
                 />
               </label>
             </div>
@@ -2098,7 +2525,9 @@
     helpCloseButton.addEventListener("click", () => closeHelp());
     mistakeBadge.addEventListener("click", toggleMistakesPanel);
     mistakeCloseButton.addEventListener("click", () => closeMistakesPanel());
-    aiSaveButton.addEventListener("click", saveAiSettings);
+    aiSaveButton.addEventListener("click", () => {
+      void saveAiSettings();
+    });
     aiGenerateButton.addEventListener("click", () => {
       void generateAiSummary();
     });
